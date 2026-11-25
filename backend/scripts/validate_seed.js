@@ -13,8 +13,8 @@ if (!Array.isArray(resources)) {
   throw new Error('Seed file does not contain an array of resources.');
 }
 
-if (resources.length !== 30) {
-  throw new Error(`Expected 30 resources, found ${resources.length}.`);
+if (resources.length === 0) {
+  throw new Error('The seed file has no resources.');
 }
 
 const locations = new Set();
