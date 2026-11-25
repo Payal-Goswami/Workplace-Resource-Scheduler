@@ -4,4 +4,4 @@ node_modules/
 dist/
 coverage/
 .DS_Store
-/backend/docs/
+./backend/docs/
