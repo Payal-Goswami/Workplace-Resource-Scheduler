@@ -6,6 +6,8 @@ import errorHandler from './middleware/errorHandler.js';
 import { listResources, getResourceAvailability } from './modules/resources/resources.repo.js';
 import { createBookingSchema } from './modules/bookings/bookings.schema.js';
 import { insertBooking, validateBookingRules } from './modules/bookings/bookings.service.js';
+import { cancelBooking, getDashboard } from './modules/bookings/bookings.service.js';
+import { bookingAndCancelRateLimit } from './middleware/bookingRateLimit.js';
 
 const app = express();
 
@@ -55,7 +57,7 @@ app.get('/resources/:id/availability', authenticate, async (req, res, next) => {
   }
 });
 
-app.post('/bookings', authenticate, async (req, res, next) => {
+app.post('/bookings', authenticate, bookingAndCancelRateLimit, async (req, res, next) => {
   try {
     const parsed = createBookingSchema.safeParse(req.body);
 
@@ -75,6 +77,24 @@ app.post('/bookings', authenticate, async (req, res, next) => {
     });
 
     return res.status(201).json(booking);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.patch('/bookings/:id/cancel', authenticate, bookingAndCancelRateLimit, async (req, res, next) => {
+  try {
+    const booking = await cancelBooking(req.user, req.params.id);
+    return res.json(booking);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/me/dashboard', authenticate, async (req, res, next) => {
+  try {
+    const dashboard = await getDashboard(req.user);
+    return res.json(dashboard);
   } catch (err) {
     next(err);
   }

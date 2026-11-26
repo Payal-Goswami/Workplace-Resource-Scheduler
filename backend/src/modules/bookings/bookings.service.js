@@ -200,3 +200,106 @@ export async function insertBooking(user, input) {
     client.release();
   }
 }
+
+export async function cancelBooking(user, bookingId, cancelReason = 'USER_CANCELLED') {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const bookingResult = await client.query(
+      `SELECT b.*, t.lead_user_id
+       FROM bookings b
+       LEFT JOIN teams t ON t.id = b.team_id
+       WHERE b.id = $1
+       FOR UPDATE OF b`,
+      [bookingId]
+    );
+    const booking = bookingResult.rows[0];
+
+    if (!booking) {
+      throw new ApiError(404, 'Booking not found');
+    }
+
+    if (booking.status === 'CANCELLED') {
+      await client.query('COMMIT');
+      return booking;
+    }
+
+    const canCancel =
+      booking.created_by === user.id ||
+      user.role === 'FACILITY_ADMIN' ||
+      (booking.team_id && booking.lead_user_id === user.id);
+
+    if (!canCancel) {
+      throw new ApiError(403, 'Forbidden');
+    }
+
+    if (new Date(booking.start_time) <= new Date()) {
+      throw new ApiError(400, 'Only future bookings can be cancelled');
+    }
+
+    const updateResult = await client.query(
+      `UPDATE bookings
+       SET status = 'CANCELLED',
+           cancel_reason = $2,
+           cancelled_by = $3,
+           cancelled_at = now()
+       WHERE id = $1
+         AND status = 'CONFIRMED'
+       RETURNING *`,
+      [bookingId, cancelReason, user.id]
+    );
+
+    await client.query('COMMIT');
+    return updateResult.rows[0] || booking;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getDashboard(user) {
+  const [myBookings, teamBookings] = await Promise.all([
+    pool.query(
+      `SELECT b.*,
+              r.name AS resource_name,
+              r.block,
+              r.floor,
+              r.room_number,
+              t.name AS team_name
+       FROM bookings b
+       JOIN resources r ON r.id = b.resource_id
+       LEFT JOIN teams t ON t.id = b.team_id
+       WHERE b.created_by = $1
+       ORDER BY b.start_time DESC`,
+      [user.id]
+    ),
+    pool.query(
+      `SELECT b.*,
+              r.name AS resource_name,
+              r.block,
+              r.floor,
+              r.room_number,
+              t.name AS team_name
+       FROM bookings b
+       JOIN team_memberships tm
+         ON tm.team_id = b.team_id
+        AND tm.user_id = $1
+        AND b.start_time >= tm.added_at
+        AND (tm.removed_at IS NULL OR b.start_time < tm.removed_at)
+       JOIN resources r ON r.id = b.resource_id
+       JOIN teams t ON t.id = b.team_id
+       WHERE b.booking_type = 'TEAM'
+       ORDER BY b.start_time DESC`,
+      [user.id]
+    ),
+  ]);
+
+  return {
+    myBookings: myBookings.rows,
+    teamBookings: teamBookings.rows,
+  };
+}
