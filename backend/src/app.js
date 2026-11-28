@@ -24,6 +24,21 @@ import {
   getTeamDeletePreview,
   deleteTeam,
 } from './modules/teams/teams.service.js';
+import {
+  createResourceSchema,
+  updateResourceSchema,
+  disableResourceSchema,
+} from './modules/admin/admin.schema.js';
+import {
+  listAdminResources,
+  createResource,
+  getResourceDisableWarning,
+  disableResource,
+  enableResource,
+  updateResource,
+  listAdminTeams,
+  listAdminBookings,
+} from './modules/admin/admin.service.js';
 
 const app = express();
 
@@ -217,8 +232,92 @@ app.delete('/teams/:id', authenticate, async (req, res, next) => {
   }
 });
 
-app.get('/admin/health', authenticate, requireRole('FACILITY_ADMIN'), (req, res) => {
+const requireAdmin = [authenticate, requireRole('FACILITY_ADMIN')];
+
+app.get('/admin/health', ...requireAdmin, (req, res) => {
   res.json({ ok: true, role: req.user.role });
+});
+
+app.get('/admin/resources', ...requireAdmin, async (req, res, next) => {
+  try {
+    return res.json(await listAdminResources());
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/admin/resources', ...requireAdmin, async (req, res, next) => {
+  try {
+    const parsed = createResourceSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() });
+    }
+
+    const resource = await createResource(req.user.id, parsed.data);
+    return res.status(201).json(resource);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/admin/resources/:id/disable-warning', ...requireAdmin, async (req, res, next) => {
+  try {
+    return res.json(await getResourceDisableWarning(req.params.id));
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/admin/resources/:id/disable', ...requireAdmin, async (req, res, next) => {
+  try {
+    const parsed = disableResourceSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() });
+    }
+
+    return res.json(
+      await disableResource(req.user.id, req.params.id, parsed.data.expectedCount)
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/admin/resources/:id/enable', ...requireAdmin, async (req, res, next) => {
+  try {
+    return res.json(await enableResource(req.user.id, req.params.id));
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.patch('/admin/resources/:id', ...requireAdmin, async (req, res, next) => {
+  try {
+    const parsed = updateResourceSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() });
+    }
+
+    return res.json(await updateResource(req.user.id, req.params.id, parsed.data));
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/admin/teams', ...requireAdmin, async (req, res, next) => {
+  try {
+    return res.json(await listAdminTeams());
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/admin/bookings', ...requireAdmin, async (req, res, next) => {
+  try {
+    return res.json(await listAdminBookings());
+  } catch (err) {
+    next(err);
+  }
 });
 
 app.use(errorHandler);
